@@ -1,0 +1,727 @@
+TITLE by YOUR_NAME_HERE
+========================================================
+
+> **Tip**: You will see quoted sections like this throughout the template to
+help you construct your report. Make sure that you remove these notes before
+you finish and submit your project!
+
+> **Tip**: One of the requirements of this project is that your code follows
+good formatting techniques, including limiting your lines to 80 characters or
+less. If you're using RStudio, go into Preferences \> Code \> Display to set up
+a margin line to help you keep track of this guideline!
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, packages}
+# Load all of the packages that you end up using in your analysis in this code
+# chunk.
+
+# Notice that the parameter "echo" was set to FALSE for this code chunk. This
+# prevents the code from displaying in the knitted HTML output. You should set
+# echo=FALSE for all code chunks in your file, unless it makes sense for your
+# report to show the code that generated a particular plot.
+
+# The other parameters for "message" and "warning" should also be set to FALSE
+# for other code chunks once you have verified that each plot comes out as you
+# want it to. This will clean up the flow of your report.
+
+# install.packages('maps')
+# install.packages('devtools')
+# devtools::install_github("zachcp/nycmaps")
+# install.packages('mapproj')
+# install.packages('rgdal')
+# install.packages('rgeos')
+# install.packages('maptools')
+# install.packages('sf')
+library(ggplot2)
+library(dplyr)
+library(maps)
+library(mapproj)
+library(nycmaps)
+library(rgdal)
+library(maptools)
+library(rgeos)
+library(sf)
+```
+
+```{r echo=FALSE, Load_the_Data}
+# Load the Data
+trees <- read.csv('2015_Street_Tree_Census_-_Tree_Data.csv')
+```
+
+> **Tip**: Before you create any plots, it is a good idea to provide a short
+introduction into the dataset that you are planning to explore. Replace this
+quoted text with that general information!
+
+This report contains an exploration of data from the 2015 New York City
+TreesCount street tree census, organized by the city's Department of Parks &
+Recreation. Data on over 680,000 of the city's street trees (i.e. not including
+parks, etc.) was collected by staff and
+volunteers. Each observation contains up to 40 pieces of information, such as
+species, health, and size, as well as highly accurate location data. As a
+student worker at my college's arboretum, this dataset was of interest to me;
+additionally, I was inspired by the use of map plots in some of the example
+projects.
+
+# Univariate Plots Section
+
+> **Tip**: In this section, you should perform some preliminary exploration of
+your dataset. Run some summaries of the data and create univariate plots to
+understand the structure of the individual variables in your dataset. Don't
+forget to add a comment after each plot or closely-related group of plots!
+There should be multiple code chunks and text sections; the first one below is
+just to help you get started.
+
+We can start with some simple plots investigating one variable from the dataset.
+
+```{r echo=FALSE, Univariate_Plots}
+ggplot(aes(x = status), data = trees) +
+  geom_bar()
+```
+
+Most of the street trees happen to be alive, thankfully. ("Dead" refers to
+still-standing dead trees, as opposed to stumps.)
+
+```{r}
+ggplot(aes(x = health), data = subset(trees, status == 'Alive')) +
+  geom_bar()
+```
+
+Of the trees that are alive, it looks like about 70-80% are in good health.
+
+```{r}
+trees$tree_dbh[trees$status == 'Stump'] <- NA
+
+ggplot(aes(x = tree_dbh), data = subset(trees, !is.na(tree_dbh))) +
+  geom_histogram(binwidth = 5) +
+  scale_y_log10()
+```
+
+This plot shows the diameters of all non-stump trees, measured in inches, with a
+log scale applied to the y axis. Evidently, the vast majority of street trees
+are on the small or medium side, with diameters in the 0-50 inch range.
+
+```{r}
+summary(subset(trees$tree_dbh, !is.na(trees$tree_dbh)))
+```
+
+Some of the street trees with diameters in the hundred-inch range may be victims
+of data misentry.
+
+```{r}
+ggplot(aes(x = tree_dbh), data = subset(trees, !is.na(tree_dbh))) +
+  geom_histogram(binwidth = 5) +
+  scale_x_continuous(limits = c(0, 75)) +
+  scale_y_log10()
+```
+
+Plotting without the outliers gives a better visualization of the distribution.
+
+```{r}
+trees$stump_diam[trees$status %in% c('Alive', 'Dead')] <- NA
+
+ggplot(aes(x = stump_diam), data = subset(trees, !is.na(stump_diam))) +
+  geom_histogram(binwidth = 5) +
+  scale_y_log10() +
+  scale_x_continuous(limits = c(0, 75))
+```
+
+Stump sizes exhibit a similar distribution.
+
+```{r}
+ggplot(aes(x = user_type), data = trees) +
+  geom_bar()
+```
+
+Here, we can see the number of trees cataloged by Parks Department staff,
+census staff, and volunteers. Significant contributions were made by each of
+the three groups. It might be interesting to see if volunteers' ratings of trees
+differed at all from those of staff.
+
+```{r}
+trees$problems[trees$status %in% c('Dead', 'Stump')] <- NA
+common_problems <- names(tail(sort(table(trees$problems))))
+
+ggplot(aes(x = problems),
+       data = subset(trees, trees$problems %in% common_problems)) +
+  geom_bar()
+```
+
+Looking at the six most common values in the 'problems' field, it appears that
+the majority of trees had no reported problems, with 'Stones' and 'BranchLights'
+being the most significant contributors otherwise. 'Stones' corresponds to the
+presence of paving stones in the tree bed, which may cause root problems.
+'BranchLights' refers to the presence of harmful light installations on the
+trunk of the tree.
+
+```{r}
+trees$spc_common[trees$status %in% c('Dead', 'Stump')] <- NA
+common_trees <- names(tail(sort(table(trees$spc_common))))
+
+ggplot(aes(x = spc_common),
+       data = subset(trees, trees$spc_common %in% common_trees)) +
+  geom_bar()
+```
+
+This barplot shows the counts of the six most common species of New York City
+street trees. The most prevalent species are the London planetree, honey locust,
+Callery pear, and pin oak; with over 50,000 specimens each, these four species
+account for over 1/3 of the trees reported.
+
+# Univariate Analysis
+
+> **Tip**: Now that you've completed your univariate explorations, it's time to
+reflect on and summarize what you've found. Use the questions below to help you
+gather your observations and add your own if you have other thoughts!
+
+### What is the structure of your dataset?
+
+The dataset contains information for 683,788 street trees in New York City.
+Live and dead trees are included. 40 variables are included, mostly categorical
+or location-related.
+
+### What is/are the main feature(s) of interest in your dataset?
+
+The most compelling part of this data is the potential to link the variables
+analyzed above to location information - for example, species or health
+distributions.
+
+### What other features in the dataset do you think will help support your \
+investigation into your feature(s) of interest?
+
+The location data should be possible to combine with a city shapefile to
+create interesting map plots.
+
+### Did you create any new variables from existing variables in the dataset?
+
+Not for univariate investigaion.
+
+### Of the features you investigated, were there any unusual distributions? \
+Did you perform any operations on the data to tidy, adjust, or change the form \
+of the data? If so, why did you do this?
+
+The only numerical variables were tree and stump diameter, which exhibited
+relatively unsurprising distributions.
+
+# Bivariate Plots Section
+
+> **Tip**: Based on what you saw in the univariate plots, what relationships
+between variables might be interesting to look at in this section? Don't limit
+yourself to relationships between a main output feature and one of the
+supporting variables. Try to look at relationships between supporting variables
+as well.
+
+One of the questions that arose from the univariate exploration was whether
+staff and volunteers exhibited differing behavior during evaluation of a tree's
+status. This can be investigated using faceted bar plots.
+
+```{r echo=FALSE, Bivariate_Plots}
+ggplot(aes(x = health), data = subset(trees, status == 'Alive')) +
+  facet_wrap(~ user_type, scales = 'free_y') +
+  geom_bar()
+```
+
+The distributions seem quite similar - it looks like volunteers were equally
+competent to staff in making assessments of tree health.
+
+Let's start looking at the location data. The traditional way of creating map
+plots in R is via the maps package. The package includes maps for countries and
+states, but not cities, so for our purposes we need to find an appropriate
+shapefile and load it (preferably into a dataframe). [This helpful post](https://github.com/tidyverse/ggplot2/wiki/plotting-polygon-shapefiles)
+was consulted to learn how to do just that using the rgdal and maptools
+packages. A shapefile for the five city boroughs can be obtained at the NYC
+[Department of City Planning webpage](https://www1.nyc.gov/site/planning/data-maps/open-data/districts-download-metadata.page).
+
+```{r}
+boroughs<-readOGR("nybb.shp", layer="nybb")
+boroughs@data$id = rownames(boroughs@data)
+boroughs.points = fortify(boroughs, region="id")
+boroughs.df = inner_join(boroughs.points, boroughs@data, by="id")
+```
+
+With the polygons laded, [this post](http://eriqande.github.io/rep-res-web/lectures/making-maps-with-R.html)
+was used to better understand the plotting syntax for map shapes. Using
+geom_polygon(), a simple map of New York City can be generated.
+
+```{r}
+# geom_point(data = trees, aes(x = x_sp, y = y_sp), color = 'red')
+
+nyc_base <- ggplot(data = counties.df, aes(x = long, y = lat, group = group)) +
+  geom_polygon(color = 'black', fill = 'gray') +
+  coord_equal(ratio = 1) # fix map projection
+nyc_base + theme_nothing() # remove axes, legend, etc.
+```
+
+```{r}
+# geom_point(data = trees, aes(x = x_sp, y = y_sp), color = 'red')
+
+nyc_base2 <- ggplot() +
+  geom_polygon(data = counties.df, aes(x = long, y = lat, group = group),
+               color = 'black', fill = 'gray') +
+  geom_point(data = subset(trees, borocode == 414),
+             aes(x = x_sp, y = y_sp), color = 'red')
+  coord_equal(ratio = 1) # fix map projection
+nyc_base2
+```
+
+
+By matching the borough names with those in the trees dataframe, we can use
+map plots to visualize our variables with respect to location. For example,
+the following plot illustrates the trees per area in each borough.
+
+```{r}
+# Add this to a plot to drop axes/ticks but keep legend
+ditch_the_axes <- theme(
+  axis.text = element_blank(),
+  axis.line = element_blank(),
+  axis.ticks = element_blank(),
+  panel.border = element_blank(),
+  panel.grid = element_blank(),
+  axis.title = element_blank()
+  )
+
+boroughs.df$numTrees <- as.numeric(table(trees$boroname)[boroughs.df$BoroName])
+
+nyc_base + geom_polygon(data = boroughs.df, aes(fill = numTrees / Shape_Area)) +
+  scale_fill_gradient(low = "khaki1", high = "darkgreen") +
+  ditch_the_axes
+```
+
+Judging by the legend, Manhattan has the greenest streets of the five boroughs,
+with about 50% more trees per area than Staten Island. Given that this
+dataset omits trees in parks and the like, it's a bit surprising that the most
+densely populated borough also exhibits the highest street tree density.
+
+Although borough visualizations are definitely of interest, the information they
+contain could just as easily be gleaned from a table. It would be more
+interesting to divide the map into further subsections and then explore further
+variables. This can be done using a shapefile of the city's 59 community
+districts.
+
+Loading and preparing such a shapefile was completed in a similar fashion to
+above, with the exception of obtaining the file from a [NYC OpenData map](https://data.cityofnewyork.us/City-Government/Community-Districts/yfnk-k7r4/data),
+since the file from the City Planning website had some corrupt polygons.
+
+```{r}
+communities<-readOGR("geo_export_a2b561f2-a386-4a66-a9d0-7555401fb02d.shp",
+                     layer="geo_export_a2b561f2-a386-4a66-a9d0-7555401fb02d")
+communities@data$id = rownames(communities@data)
+communities.points = fortify(communities, region="id")
+communities.df = inner_join(communities.points, communities@data, by="id")
+```
+
+```{r}
+# geom_point(data = trees, aes(x = x_sp, y = y_sp), color = 'red')
+
+nyc_cd_base <- ggplot(data = communities.df, aes(x = long, y = lat, group = group)) +
+  geom_polygon(color = 'black', fill = 'gray') +
+  coord_equal(ratio = 1)
+nyc_cd_base + theme_nothing()
+```
+
+This map will allow for the display of more detailed information. Let's see
+what the tree density looks like using this map.
+
+```{r}
+communities.df$numTrees <- as.numeric(table(trees$cb_num)[as.character(communities.df$boro_cd)])
+
+nyc_cd_base + geom_polygon(data = communities.df, aes(fill = numTrees / shape_area)) +
+  scale_fill_gradient(low = "khaki1", high = "darkgreen") +
+  ditch_the_axes
+```
+
+This shows that the areas of greatest tree density tend to be towards the
+center of the city, in areas such as Manhattan and much of Brooklyn.
+
+```{r}
+volunteer_stats_cd <- trees %>%
+  group_by(cb_num) %>%
+  summarise(prop_volunteers = as.numeric(table(user_type)['Volunteer']) / n(),
+            mean_size = mean(tree_dbh, na.rm = TRUE))
+
+communities.df.volunteers <- inner_join(communities.df, volunteer_stats_cd,
+                                     by = c('boro_cd' = 'cb_num'))
+nyc_cd_base + 
+  geom_polygon(data = communities.df.volunteers,
+               aes(fill = prop_volunteers)) +
+  scale_fill_gradient(low = 'blue', high = 'red') +
+  ditch_the_axes
+```
+
+This plot illustrates the proportion of trees cataloged by volunteers (as
+opposed to staff) in each community district. Volunteer activity seems to
+mirror tree density, being higher in the central districts of the city.
+The legend shows that these differences are quite large, with volunteers
+cataloging around 10% of the trees in Staten Island as opposed to around 80% in
+north Brooklyn. Volunteer engagement is much stronger in the areas
+with higher tree density, even though tree density variation is not that large,
+excepting central Manhattan. The next tree census may benefit from additional
+promotion in the city's outer boroughs.
+
+```{r}
+nyc_cd_base + 
+  geom_polygon(data = communities.df.volunteers,
+               aes(fill = mean_size)) +
+  scale_fill_gradient(low = 'blue', high = 'red') +
+  ditch_the_axes
+```
+
+Here, the average tree diameter is displayed for each community district. The
+average street tree in much of Queens and Brooklyn is over a foot in diameter,
+while Manhattan and West Bronx street trees average significantly smaller; this
+makes sense given the densely populated developments of those neighborhoods.
+
+```{r}
+# common_tree_names = c('London planetree', 'honeylocust')
+
+diversity_by_cd <- trees %>%
+  group_by(cb_num) %>%
+  summarise(num_species = length(table(spc_common)[table(spc_common) > 0]))
+
+communities.df.diversity <- inner_join(communities.df, diversity_by_cd,
+                                     by = c('boro_cd' = 'cb_num'))
+nyc_cd_base + 
+  geom_polygon(data = communities.df.diversity,
+               aes(fill = num_species)) +
+  scale_fill_gradient(low = 'tomato4', high = 'chartreuse3') +
+  ditch_the_axes
+```
+
+This map illustrates street tree diversity as the number of species in each
+district. From this visualization, it is apparent that Manhattan and Bronx
+districts contain fewer species of street tree on average. However, given that
+the community districts vary significantly in area, it might also be useful
+to plot this information per unit area by dividing num_species by each shape's
+area.
+
+```{r}
+nyc_cd_base + 
+  geom_polygon(data = communities.df.diversity,
+               aes(fill = num_species/shape_area)) +
+  scale_fill_gradient(low = 'tomato4', high = 'chartreuse3') +
+  ditch_the_axes
+```
+
+This plot tells a different story - Manhattan and West Bronx are among the
+most diverse areas, judging by species per area. This may correspond to the
+earlier finding that Manhattan had the most trees per area while Staten Island
+had the least - more plantings is equated with greater diversity.
+
+Moving on from diversity, are there any other interesting patterns at the
+species level? One idea might be to plot a map with the most common tree
+species in each district.
+
+```{r}
+# Base r does not contain a mode function. This returns a single mode
+# From https://stackoverflow.com/questions/2547402/is-there-a-built-in-function-for-finding-the-mode
+Mode <- function(x) {
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+
+species_by_cd <- trees %>%
+  group_by(cb_num) %>%
+  summarise(abundant_tree = Mode(spc_common))
+
+communities.df.species <- inner_join(communities.df, species_by_cd,
+                                     by = c('boro_cd' = 'cb_num'))
+nyc_cd_base + 
+  geom_polygon(data = communities.df.species,
+               aes(fill = abundant_tree)) +
+  ditch_the_axes
+```
+
+This plot displays the most abundant tree species in each district. The five
+species represented are the five most common overall, and the city-wide counts
+are as follows:
+
+```{r}
+head(sort(table(trees$spc_common), decreasing = TRUE), 5)
+```
+
+Given these numbers, the species distributions are quite interesting. Manhattan,
+West Bronx, and North Brooklyn are dominated by honey locusts, while the
+surrounding areas are predominantly planted with London planetrees. This
+seems to mirror the average trunk size plot created earlier. Is the planting
+distribution related to tree size?
+
+```{r}
+summary(trees$tree_dbh[trees$spc_common == 'honeylocust'])
+```
+
+```{r}
+summary(trees$tree_dbh[trees$spc_common == 'London planetree'])
+```
+
+Honey locust trees are about half as large (judging by diameter) as london
+planetrees, on average. This could mean that honey locusts are planted more
+often in the aforementioned congested parts of the city, while planetrees are
+better suited to more open neighborhoods.
+
+To better compare the distributions of the two species, we can
+make a map plot which only considers planetrees and honey locusts.
+
+```{r}
+dddd <- subset(trees, status = 'Alive') %>%
+  group_by(cb_num) %>%
+  summarise(pct_pt = as.numeric(table(spc_common)['London planetree'] /( table(spc_common)['honeylocust'] +  table(spc_common)['London planetree'])))
+
+communities.df.dddd <- inner_join(communities.df, dddd,
+                                     by = c('boro_cd' = 'cb_num'))
+nyc_cd_base + 
+  geom_polygon(data = communities.df.dddd,
+               aes(fill = pct_pt)) +
+  scale_fill_gradient(low = 'yellow', high = 'blue') +
+  ditch_the_axes
+```
+
+This plot shows the proportion of planetrees relative to honey locusts in each
+district. In much Manhattan, there are at least 4 honey locusts to every
+planetree (judging by the proportion of 0.2 on the legend). The ratio is closer
+in much of the rest of the city, with only a few districts colored blue or
+deep purple (indicating significant prevalence of planetrees).
+
+To verify the assumptions I've been making about congestion in Manhattan and
+West Bronx, it might be a good idea to try to factor in some population data
+after I've had enough fun with these exploratory map plots.
+
+Lastly, it would be interesting to revisit tree health in the context of
+location within the city.
+
+```{r}
+health_by_cd <- subset(trees, status = 'Alive') %>%
+  group_by(cb_num) %>%
+  summarise(pct_healthy = as.numeric(table(health)['Good']) / n())
+
+communities.df.health <- inner_join(communities.df, health_by_cd,
+                                     by = c('boro_cd' = 'cb_num'))
+nyc_cd_base + 
+  geom_polygon(data = communities.df.health,
+               aes(fill = pct_healthy)) +
+  scale_fill_gradient(low = 'orangered', high = 'dodgerblue') +
+  ditch_the_axes
+```
+
+This plot illustrates the proportion of healthy (health = 'Good') trees in each
+district. Much of Manhattan and West Bronx contains disproportionately unhealthy
+trees. Most notably, the bottom-right district - Rockaway, Queens - has a
+surprisingly low 'health rating'. Only about 60% of trees were judged as being
+in good health. Why might this be the case? Bringing some more variables into
+the equation may help answer this question.
+
+```{r}
+ggplot() +
+  geom_polygon(data = subset(communities.df, boro_cd == 414),
+               aes(x = long, y = lat, group = group),
+               color = 'black', fill = 'gray') +
+  geom_point(data = subset(trees, cb_num == 414 & status == 'Alive'),
+             aes(x = longitude, y = latitude, color = health)) +
+  coord_equal(ratio = 1) +
+  ditch_the_axes
+```
+
+
+# Bivariate Analysis
+
+> **Tip**: As before, summarize what you found in your bivariate explorations
+here. Use the questions below to guide your discussion.
+
+### Talk about some of the relationships you observed in this part of the \
+investigation. How did the feature(s) of interest vary with other features in \
+the dataset?
+
+Many variables exhibited interesting trends when related to location. Volunteer
+activity was much higher in the central parts of the city. Variables such as
+species diversity, tree size, and tree health seemed to have similar
+distributions with respect to location.
+
+### Did you observe any interesting relationships between the other features \
+(not the main feature(s) of interest)?
+
+The Rockaway peninsula in Queens had a very large percentage of unhealthy trees.
+This would be an interesting phenomena to explore further.
+
+### What was the strongest relationship you found?
+
+The relationship between location and volunteer activity was quite profound,
+varying from less than 20% to over 80% depending on the community district.
+
+# Multivariate Plots Section
+
+> **Tip**: Now it's time to put everything together. Based on what you found in
+the bivariate plots section, create a few multivariate plots to investigate
+more complex interactions between variables. Make sure that the plots that you
+create here are justified by the plots you explored in the previous section. If
+you plan on creating any mathematical models, this is the section where you
+will do that.
+
+The bivariate exploration raised two location-related questions that will be
+further explored in this section:
+
+1) Why do inner-city districts in Manhattan, West Bronx, etc. exhibit different
+species distributions and tree health?
+
+2) Why are trees in Rockaway, Queens faring so poorly?
+
+```{r echo=FALSE, Multivariate_Plots}
+
+```
+
+# Multivariate Analysis
+
+### Talk about some of the relationships you observed in this part of the \
+investigation. Were there features that strengthened each other in terms of \
+looking at your feature(s) of interest?
+
+### Were there any interesting or surprising interactions between features?
+
+### OPTIONAL: Did you create any models with your dataset? Discuss the \
+strengths and limitations of your model.
+
+------
+
+# Final Plots and Summary
+
+> **Tip**: You've done a lot of exploration and have built up an understanding
+of the structure of and relationships between the variables in your dataset.
+Here, you will select three plots from all of your previous exploration to
+present here as a summary of some of your most interesting findings. Make sure
+that you have refined your selected plots for good titling, axis labels (with
+units), and good aesthetic choices (e.g. color, transparency). After each plot,
+make sure you justify why you chose each plot by describing what it shows.
+
+### Plot One
+```{r echo=FALSE, Plot_One}
+
+```
+
+### Description One
+
+
+### Plot Two
+```{r echo=FALSE, Plot_Two}
+
+```
+
+### Description Two
+
+
+### Plot Three
+```{r echo=FALSE, Plot_Three}
+
+```
+
+### Description Three
+
+------
+
+# Reflection
+
+> **Tip**: Here's the final step! Reflect on the exploration you performed and
+the insights you found. What were some of the struggles that you went through?
+What went well? What was surprising? Make sure you include an insight into
+future work that could be done with the dataset.
+
+> **Tip**: Don't forget to remove this, and the other **Tip** sections before
+saving your final work and knitting the final report!
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+volunteer_stats <- trees %>%
+  group_by(boroname) %>%
+  summarise(prop_volunteers = as.numeric(table(user_type)['Volunteer']) / n())
+
+counties.df.volunteers <- inner_join(counties.df, volunteer_stats,
+                                     by = c('BoroName' = 'boroname'))
+nyc_base + geom_polygon(data = counties.df.volunteers,
+                        aes(fill = prop_volunteers)) +
+  ditch_the_axes
+```
+
+```{r}
+communities<-readOGR("geo_export_a2b561f2-a386-4a66-a9d0-7555401fb02d.shp",
+                     layer="geo_export_a2b561f2-a386-4a66-a9d0-7555401fb02d")
+communities@data$id = rownames(communities@data)
+communities.points = fortify(communities, region="id")
+communities.df = inner_join(communities.points, communities@data, by="id")
+```
+
+```{r}
+# geom_point(data = trees, aes(x = x_sp, y = y_sp), color = 'red')
+
+nyc_cd_base <- ggplot(data = communities.df, aes(x = long, y = lat, group = group)) +
+  geom_polygon(color = 'black', fill = 'gray') +
+  coord_equal(ratio = 1)
+nyc_cd_base + theme_nothing()
+```
+
+```{r}
+communities.df$numTrees <- as.numeric(table(trees$cb_num)[as.character(communities.df$boro_cd)])
+
+nyc_cd_base + geom_polygon(data = communities.df, aes(fill = numTrees / shape_area)) +
+  scale_fill_gradient(low = "khaki1", high = "darkgreen") +
+  ditch_the_axes
+```
+
+```{r}
+trees$tree_dbh[trees$status == 'Stump'] <- NA
+
+volunteer_stats_cd <- trees %>%
+  group_by(cb_num) %>%
+  summarise(prop_volunteers = as.numeric(table(user_type)['Volunteer']) / n(),
+            prop_shoes = as.numeric(table(brch_shoe)['Yes']) / n(),
+            mean_size = mean(tree_dbh, na.rm = TRUE))
+
+communities.df.volunteers <- inner_join(communities.df, volunteer_stats_cd,
+                                     by = c('boro_cd' = 'cb_num'))
+nyc_cd_base + 
+  geom_polygon(data = communities.df.volunteers,
+               aes(fill = prop_volunteers)) +
+  ditch_the_axes
+```
+
+```{r}
+nyc_cd_base +
+  geom_polygon(data = communities.df.volunteers,
+               aes(fill = prop_shoes)) +
+  ditch_the_axes
+```
+
