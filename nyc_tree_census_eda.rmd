@@ -244,7 +244,7 @@ geom_polygon(), a simple map of New York City can be generated.
 ```{r}
 # geom_point(data = trees, aes(x = x_sp, y = y_sp), color = 'red')
 
-nyc_base <- ggplot(data = counties.df, aes(x = long, y = lat, group = group)) +
+nyc_base <- ggplot(data = boroughs.df, aes(x = long, y = lat, group = group)) +
   geom_polygon(color = 'black', fill = 'gray') +
   coord_equal(ratio = 1) # fix map projection
 nyc_base + theme_nothing() # remove axes, legend, etc.
@@ -254,7 +254,7 @@ nyc_base + theme_nothing() # remove axes, legend, etc.
 # geom_point(data = trees, aes(x = x_sp, y = y_sp), color = 'red')
 
 nyc_base2 <- ggplot() +
-  geom_polygon(data = counties.df, aes(x = long, y = lat, group = group),
+  geom_polygon(data = boroughs.df, aes(x = long, y = lat, group = group),
                color = 'black', fill = 'gray') +
   geom_point(data = subset(trees, borocode == 414),
              aes(x = x_sp, y = y_sp), color = 'red')
@@ -519,6 +519,8 @@ ggplot() +
 ```
 
 
+
+
 # Bivariate Analysis
 
 > **Tip**: As before, summarize what you found in your bivariate explorations
@@ -561,9 +563,147 @@ species distributions and tree health?
 
 2) Why are trees in Rockaway, Queens faring so poorly?
 
-```{r echo=FALSE, Multivariate_Plots}
+Starting with the first question, our intuition was that street trees fared
+worse in more congested districts. To justify this intuition, we can use
+another dataset provided by the city's OpenData initiative that includes
+populations for each of the 59 community districts, recorded once every decade
+(most recently in 2010).
 
+```{r echo=FALSE, Multivariate_Plots}
+population <- read.csv("New_York_City_Population_By_Community_Districts.csv")
+str(population)
 ```
+
+This data can be joined to the communities shapefile and overlaid on the tree
+health plot using geom_point.
+
+```{r}
+boro_to_id <- function(df, boroname, cdnum) {
+  boro_additives <- c(100, 200, 300, 400, 500)
+  names(boro_additives) <- c("Manhattan",
+                            "Bronx",
+                            "Brooklyn",
+                            "Queens",
+                            "Staten Island")
+  df[["borocode"]] <- as.numeric(boro_additives[as.character(df[[boroname]])]) + df[[cdnum]] 
+  df
+}
+
+population <- boro_to_id(population, "Borough", "CD.Number")
+```
+
+```{r}
+communities.df.pop <- inner_join(communities.df, population,
+                                 by = c("boro_cd" = "borocode"))
+community.centers <- communities.df.pop %>%
+  group_by(boro_cd) %>%
+  summarise(x = mean(range(long)),
+            y = mean(range(lat)))
+
+community.centers <- as.data.frame(community.centers)
+communities.df.pop <- inner_join(communities.df.pop, community.centers,
+                                 by = "boro_cd")
+communities.df.pop$pop_density <- communities.df.pop$X2010.Population / communities.df.pop$shape_area
+
+ggplot(data = communities.df, aes(x = long, y = lat, group = group)) +
+  geom_polygon(color = 'black', fill = 'gray') +
+  geom_polygon(data = communities.df.health,
+               aes(fill = pct_healthy)) +
+  scale_fill_gradient(low = 'orangered', high = 'dodgerblue') +
+  geom_point(data = communities.df.pop,
+             aes(x = x,
+                 y = y,
+                 size = pop_density,
+                 group = NULL)) +
+  coord_equal(ratio = 1) +
+  ditch_the_axes
+```
+
+Judging by this plot, it seems that the theory of population density affecting
+tree health holds true in Manhattan and West Bronx. In those districts,
+the population densities are indeed very high compared to much of the rest of
+the city.
+
+However, the
+relationship appears to be be weaker in Brooklyn and Queens - there are subtle
+trends in health that do not seem to directly related to population. The most
+striking example is the aforementioned Rockaway Peninsula - population density
+is quite low, yet the street tree health is worse on average than in any other
+district.
+
+We can further investigate this district by subsetting the data and comparing
+tree health to more variables. Maybe some species tend to fare worse than
+others. A species-specific blight or insect infestation of an abundant species
+could bring down the average significantly.
+
+```{r}
+rockaway_trees <- subset(trees, cb_num == 414 & status == 'Alive') # found by plotting borocode 414
+summary(table(rockaway_trees$spc_common) > 0)
+```
+
+Rockaway is actually one of the most diverse districts, containing 109 of the
+total 133 species of NYC street tree. Let's plot the average health for the
+most common species (over 100 individuals in the district).
+
+```{r}
+tree_counts <- table(rockaway_trees$spc_common)
+common_trees <- unique(rockaway_trees$spc_common[tree_counts[rockaway_trees$spc_common] > 100])
+rockaway_commons <- subset(rockaway_trees, spc_common %in% common_trees)
+
+common_health <- rockaway_commons %>%
+  group_by(spc_common) %>%
+  summarise(mean_health = as.numeric(table(health)['Good']) / n(),
+            n = n())
+
+ggplot(data = common_health,
+       aes(x = reorder(spc_common, mean_health), y = mean_health)) +
+  geom_point(aes(size = n)) +
+  geom_hline(yintercept = table(trees$health)['Good'] / nrow(trees),
+             color = "blue") +
+  coord_flip()
+```
+
+This plot illustrates the average health of the most common species, with the
+dot size corresponding to tree count and the blue line representing the
+citywide average. (Again, health is measured as the number of live trees rated
+as being in 'Good' health divided by the total number of live trees.) Clearly,
+there is quite a bit of variation in health by species, but only two of the
+24 species with counts over 100 exhibit health proportions greater than the
+citywide average. Notably, the two most common species in the city both
+fare poorly in Rockaway: about 50% of London planetrees and below 70% of
+honey locusts are in good health.
+
+This plot indicates that many species of street tree suffer in this particular
+district, rather than one or two abundant species bringing down the average as
+theorized. An alternate theory is that the problems recorded for each tree,
+such as stones in planting beds and lighting affixed to the tree, occur in
+higher proportions in Rockaway. This can be investigated using another simple
+map plot.
+
+```{r}
+problems_by_cd <- subset(trees, status = 'Alive') %>%
+  group_by(cb_num) %>%
+  summarise(pct_problematic = 1 - (as.numeric(table(problems)['None']) / n()))
+
+communities.df.problems <- inner_join(communities.df, problems_by_cd,
+                                     by = c('boro_cd' = 'cb_num'))
+nyc_cd_base + 
+  geom_polygon(data = communities.df.problems,
+               aes(fill = pct_problematic)) +
+  scale_fill_gradient(low = 'dodgerblue', high = 'orangered') +
+  ditch_the_axes
+```
+
+Actually, Rockaway has a percentage of problematic trees on the lower end of the
+scale, so this theory doesn't hold up either.
+
+The best remaining theory seems to be that Rockaway is simply an inhospitable
+environment for street trees. Perhaps storms are more likely to adversely
+affect the exposed trees in this beach-lined district. Another possibility is
+that young street trees are not as well cared for as described on the
+[Parks Department webpage](https://www.nycgovparks.org/trees/street-tree-planting)
+during their first couple of years, a responsibility belonging to the street
+tree contractors.
 
 # Multivariate Analysis
 
@@ -725,3 +865,13 @@ nyc_cd_base +
   ditch_the_axes
 ```
 
+```{r}
+install.packages("highcharter")
+install.packages("TTR")
+library(TTR)
+library(highcharter)
+```
+
+```{r}
+hchart(trees$tree_dbh)
+```
