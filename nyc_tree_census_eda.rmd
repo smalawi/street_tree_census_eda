@@ -1,5 +1,8 @@
 2015 NYC Street Tree Census EDA by Sayed Malawi
 ========================================================
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE)
+```
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE, packages}
 # Load all of the packages that you end up using in your analysis in this code
@@ -89,16 +92,18 @@ summary(subset(trees$tree_dbh, !is.na(trees$tree_dbh)))
 ```
 
 Some of the street trees with diameters in the hundred-inch range may be victims
-of data misentry.
+of data misentry. Plotting without the outliers may give a better visualization
+of the distribution.
 
 ```{r echo=FALSE}
 ggplot(aes(x = tree_dbh), data = subset(trees, !is.na(tree_dbh))) +
-  geom_histogram(binwidth = 5) +
-  scale_x_continuous(limits = c(0, 75)) +
-  scale_y_log10()
+  geom_histogram(binwidth = 2) +
+  scale_y_log10() +
+  coord_cartesian(xlim = c(0, quantile(trees$tree_dbh, 0.995, na.rm = T)))
 ```
 
-Plotting without the outliers gives a better visualization of the distribution.
+As the above graph shows, the distribution is still right-skewed, but not as
+severely as previously thought.
 
 ```{r echo=FALSE}
 trees$stump_diam[trees$status %in% c('Alive', 'Dead')] <- NA
@@ -223,20 +228,7 @@ nyc_base <- ggplot(data = boroughs.df,
                    aes(x = long, y = lat, group = group)) +
   geom_polygon(color = 'black', fill = 'gray') +
   coord_equal(ratio = 1) # fix map projection
-nyc_base + theme_nothing() # remove axes, legend, etc.
-```
-
-```{r echo=FALSE}
-# geom_point(data = trees, aes(x = x_sp, y = y_sp), color = 'red')
-
-nyc_base2 <- ggplot() +
-  geom_polygon(data = boroughs.df,
-               aes(x = long, y = lat, group = group),
-               color = 'black', fill = 'gray') +
-  geom_point(data = subset(trees, borocode == 414),
-             aes(x = x_sp, y = y_sp), color = 'red')
-  coord_equal(ratio = 1) # fix map projection
-nyc_base2
+nyc_base
 ```
 
 By matching the borough names with those in the trees dataframe, we can use
@@ -244,7 +236,7 @@ map plots to visualize our variables with respect to location. For example,
 the following plot illustrates the trees per area in each borough.
 
 ```{r echo=FALSE}
-# Add this to a plot to drop axes/ticks but keep legend. From linked S/O post
+# Add this to a plot to drop axes/ticks but keep legend. From linked github post
 ditch_the_axes <- theme(
   axis.text = element_blank(),
   axis.line = element_blank(),
@@ -278,8 +270,8 @@ above, with the exception of obtaining the file from a [NYC OpenData map](https:
 since the file from the City Planning website had some corrupt polygons.
 
 ```{r echo=FALSE}
-communities<-readOGR("Shapefiles/geo_export_1a16a8c9-efbb-4d27-82b6-d0d4928d183e.shp",
-                     layer="geo_export_1a16a8c9-efbb-4d27-82b6-d0d4928d183e")
+communities<-readOGR("Shapefiles/nycd.shp",
+                     layer="nycd")
 communities@data$id = rownames(communities@data)
 communities.points = fortify(communities, region="id")
 communities.df = inner_join(communities.points, communities@data, by="id")
@@ -292,7 +284,7 @@ nyc_cd_base <- ggplot(data = communities.df,
                       aes(x = long, y = lat, group = group)) +
   geom_polygon(color = 'black', fill = 'gray') +
   coord_equal(ratio = 1)
-nyc_cd_base + theme_nothing()
+nyc_cd_base + ditch_the_axes
 ```
 
 This map will allow for the display of more detailed information. Let's see
@@ -439,7 +431,7 @@ make a map plot which only considers planetrees and honey locusts.
 ```{r echo=FALSE}
 dddd <- subset(trees, status = 'Alive') %>%
   group_by(cb_num) %>%
-  summarise(pct_pt = as.numeric(table(spc_common)['London planetree']/( table(spc_common)['honeylocust'] +  table(spc_common)['London planetree'])))
+  summarise(pct_pt = as.numeric(table(spc_common)['London planetree']/(table(spc_common)['honeylocust'] +  table(spc_common)['London planetree'])))
 
 communities.df.dddd <- inner_join(communities.df, dddd,
                                   by = c('boro_cd' = 'cb_num'))
@@ -536,7 +528,8 @@ boro_to_id <- function(df, boroname, cdnum) {
                             "Brooklyn",
                             "Queens",
                             "Staten Island")
-  df[["borocode"]] <- as.numeric(boro_additives[as.character(df[[boroname]])]) + df[[cdnum]] 
+  boronum <- as.numeric(boro_additives[as.character(df[[boroname]])])
+  df[["borocode"]] <- boronum + df[[cdnum]] 
   df
 }
 
@@ -589,8 +582,8 @@ could bring down the average significantly.
 
 ```{r}
 # (confirmed by plotting district 414)
-rockaway_trees <- subset(trees, cb_num == 414 & status == 'Alive')
-summary(table(rockaway_trees$spc_common) > 0)
+ra_trees <- subset(trees, cb_num == 414 & status == 'Alive')
+summary(table(ra_trees$spc_common) > 0)
 ```
 
 Rockaway is actually one of the most diverse districts, containing 109 of the
@@ -598,9 +591,9 @@ total 133 species of NYC street tree. Let's plot the average health for the
 most common species (over 100 individuals in the district).
 
 ```{r echo=FALSE}
-tree_counts <- table(rockaway_trees$spc_common)
-common_trees <- unique(rockaway_trees$spc_common[tree_counts[rockaway_trees$spc_common] > 100])
-rockaway_commons <- subset(rockaway_trees, spc_common %in% common_trees)
+tree_counts <- table(ra_trees$spc_common)
+common_trees <- unique(ra_trees$spc_common[tree_counts[ra_trees$spc_common] > 100])
+rockaway_commons <- subset(ra_trees, spc_common %in% common_trees)
 
 common_health <- rockaway_commons %>%
   group_by(spc_common) %>%
