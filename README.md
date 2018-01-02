@@ -2,7 +2,9 @@
 2015 NYC Street Tree Census exploratory analysis
 
 ### Usage
-Before running the .rmd file, unzip the compressed files in the Data and Shapefiles folders.
+Unfortunately Github does not currently render R Markdown files, so to view the project open the PDF export instead. (I've been experiencing some pdflatex related issues in knitting directly to .pdf so the file is currently a suboptimally formatted PDF export of an HTML knit, but hopefully that can be fixed soon.)
+
+If using the .rmd file, unzip the compressed files in the Data and Shapefiles folders before running.
 
 ### Posts consulted
 - http://eriqande.github.io/rep-res-web/lectures/making-maps-with-R.html
